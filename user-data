@@ -1,0 +1,57 @@
+#cloud-config
+autoinstall:
+  version: 1
+  early-commands:
+    - systemctl stop ssh # otherwise packer tries to connect and exceed max attempts
+  network:
+    network:
+      version: 2
+      ethernets:
+        eth0:
+          addresses:
+            - 10.5.100.23/24
+          gateway4: 10.5.100.254
+          nameservers: 
+            search: [homelab.io]
+            addresses: [8.8.8.8]
+  apt:
+    preserve_sources_list: false
+    primary:
+      - arches: [amd64]
+        uri: "http://archive.ubuntu.com/ubuntu/"
+  ssh:
+    install-server: yes
+#    authorized-keys:
+#      - "your SSH pub key here"
+    allow-pw: yes
+  identity:
+    hostname: ubuntu-00
+    password: "$6$FhcddHFVZ7ABA4Gi$9l4yURWASWe8xEa1jzI0bacVLvhe3Yn4/G3AnU11K3X0yu/mICVRxfo6tZTB2noKljlIRzjkVZPocdf63MtzC0" # root
+    username: ubuntu # root doesn't work
+  packages:
+    - apt-transport-https 
+    - ca-certificates 
+    - curl
+  user-data:
+    disable_root: false
+  late-commands:
+    - echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu
+    - sed -ie 's/GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="net.ifnames=0 ipv6.disable=1 biosdevname=0 console=ttyS0,115200n8"/' /target/etc/default/grub
+    - curtin in-target --target /target update-grub2
+    - swapoff -a
+    - sed -ie '/\/swap.img/s/^/#/g' /target/etc/fstab
+    - echo 'HelloworlLD!' > /target/var/log/hello.txt
+    - curl -vo /target/usr/share/keyrings/kubernetes-archive-keyring.gpg http://10.5.100.10:3003/apt-key.gpg
+    - |
+      cat <<EOF |  tee /target/etc/modules-load.d/k8s.conf
+      br_netfilter
+      EOF
+    - |
+      cat <<EOF | sudo tee /target/etc/sysctl.d/k8s.conf
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.bridge.bridge-nf-call-iptables = 1
+      EOF
+    - sysctl --system
+    - echo 'deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main' | tee /target/etc/apt/sources.list.d/kubernetes.list
+
+
